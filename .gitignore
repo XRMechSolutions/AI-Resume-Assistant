@@ -1,0 +1,87 @@
+# ===========================================
+# AI Resume Assistant - Personal Files Exclusion
+# ===========================================
+# This .gitignore excludes personal information while keeping
+# the reusable workflow logic shareable.
+
+# ===========================================
+# PERSONAL RESUME & COVER LETTER FILES
+# ===========================================
+# Exclude all actual resumes (keep only examples/)
+*Resume*.txt
+*Resume*.pdf
+*Resume*.docx
+*CoverLetter*.txt
+*CoverLetter*.pdf
+*CoverLetter*.docx
+
+# ===========================================
+# SOURCE OF TRUTH DOCUMENTS (Personal Experience)
+# ===========================================
+*_Truth.md
+*_Reference.md
+*_Experience*.md
+*Complete_Experience*.md
+
+# Personal documents
+*LinkedIn*.pdf
+*Projects List*.docx
+
+# ===========================================
+# JOB APPLICATION HISTORY (Personal)
+# ===========================================
+Job_Application_Tracker.csv
+Job_Search_Queue.csv
+
+# ===========================================
+# APPLICATION FOLDERS (Personal History)
+# ===========================================
+Archive/
+JobSearches/
+
+# ===========================================
+# PERSONAL CLAUDE.MD (Keep template version)
+# ===========================================
+# The main CLAUDE.md contains personal skills/contact info
+# Users should copy CLAUDE.template.md to CLAUDE.md and customize
+CLAUDE.md
+
+# ===========================================
+# PERSONAL ANTI-FABRICATION CHECKLIST
+# ===========================================
+# Contains person-specific skills to verify
+ANTI_FABRICATION_CHECKLIST.md
+
+# ===========================================
+# SYSTEM FILES
+# ===========================================
+__pycache__/
+*.pyc
+*.pyo
+~$*
+~WRL*.tmp
+*.tmp
+.DS_Store
+Thumbs.db
+nul
+
+# Claude Code session files
+.claude/
+*.txt.bak
+
+# Conversation logs (date-prefixed files)
+202[0-9]-[0-9][0-9]-[0-9][0-9]-*.txt
+
+# Personal job board notes (has account status etc)
+Job_Boards_Ranked.md
+
+# ===========================================
+# WHAT IS TRACKED (for reference)
+# ===========================================
+# The following ARE included in the repo:
+# - create_pdf.py (PDF generation script)
+# - create_cover_letter_docx.py (if exists)
+# - Job_Boards.csv (public job board list)
+# - CLAUDE.template.md (template with placeholders)
+# - examples/ folder (template files for new users)
+# - README.md (setup instructions)
