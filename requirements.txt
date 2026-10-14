@@ -1,0 +1,9 @@
+reportlab
+pymupdf
+python-docx
+# job-search MCP server (job_mcp/)
+mcp>=1.27,<2
+playwright>=1.55
+httpx>=0.28
+pyyaml>=6
+pytest>=8

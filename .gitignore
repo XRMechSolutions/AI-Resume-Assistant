@@ -22,6 +22,15 @@
 *_Reference.md
 *_Experience*.md
 *Complete_Experience*.md
+*_Source_of_Truth.md
+Source_of_Truth.md
+Search_Profile.md
+Application_Responses.md
+Questionnaire_Answers.md
+Unconfirmed_Facts.md
+*_Application_Responses.md
+*_How_I_Work.md
+*Questionnaire_Answers.md
 
 # Personal documents
 *LinkedIn*.pdf
@@ -32,6 +41,23 @@
 # ===========================================
 Job_Application_Tracker.csv
 Job_Search_Queue.csv
+Open_Calls.csv
+
+# Personal job board notes (has account status etc)
+Job_Boards_Ranked.md
+
+# Portfolio and showpiece tracking (personal)
+PORTFOLIO_READINESS.md
+Project_Demo_Videos.md
+Showpiece_Backlog.md
+
+# ===========================================
+# VOICE MATCHING (raw writing + your profile)
+# ===========================================
+# Only VoiceMatching/README.md and Example_Voice_Profile.md are tracked
+VoiceMatching/*
+!VoiceMatching/README.md
+!VoiceMatching/Example_Voice_Profile.md
 
 # ===========================================
 # APPLICATION FOLDERS (Personal History)
@@ -40,11 +66,11 @@ Archive/
 JobSearches/
 
 # ===========================================
-# PERSONAL CLAUDE.MD (Keep template version)
+# MACHINE-LOCAL AGENT FILES
 # ===========================================
-# The main CLAUDE.md contains personal skills/contact info
-# Users should copy CLAUDE.template.md to CLAUDE.md and customize
-CLAUDE.md
+# CLAUDE.md, AGENTS.md, GEMINI.md and .claude/skills/ are shared and tracked; personal settings
+# live in Search_Profile.md instead. Local overrides stay out:
+CLAUDE.local.md
 
 # ===========================================
 # PERSONAL ANTI-FABRICATION CHECKLIST
@@ -64,16 +90,18 @@ __pycache__/
 .DS_Store
 Thumbs.db
 nul
+*.stackdump
+.idea/
+.venv/
+.pytest_cache/
+_pdf_previews/
 
-# Claude Code session files
-.claude/
+# Claude Code machine-local settings
+.claude/settings.local.json
 *.txt.bak
 
 # Conversation logs (date-prefixed files)
 202[0-9]-[0-9][0-9]-[0-9][0-9]-*.txt
-
-# Personal job board notes (has account status etc)
-Job_Boards_Ranked.md
 
 # ===========================================
 # WHAT IS TRACKED (for reference)
@@ -82,6 +110,12 @@ Job_Boards_Ranked.md
 # - create_pdf.py (PDF generation script)
 # - create_cover_letter_docx.py (if exists)
 # - Job_Boards.csv (public job board list)
-# - CLAUDE.template.md (template with placeholders)
+# - CLAUDE.md, AGENTS.md, GEMINI.md, SETUP.md, .claude/skills/setup/ (agent instructions + onboarding)
 # - examples/ folder (template files for new users)
-# - README.md (setup instructions)
+# - README.md
+# - RESUME_CRAFTING_GUIDELINES.md, RESUME_TXT_FORMAT.md, workflow guides (JOB_*.md, *_WORKFLOW.md)
+# - requirements.txt, job_mcp/ (optional job-search MCP server)
+# - VoiceMatching/README.md, VoiceMatching/Example_Voice_Profile.md
+
+# Templates in examples/ are always tracked, even when their names match a personal pattern above
+!examples/*

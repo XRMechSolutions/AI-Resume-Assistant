@@ -10,15 +10,59 @@ from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 
-def parse_resume_txt(file_path):
+MAX_PAGES = 2
+
+# Canonical list of recognized section headers.
+# Used by both the parser (to detect sections) and the renderer (to order output).
+SECTION_PATTERNS = [
+    'SUMMARY', 'PROFESSIONAL SUMMARY', 'OBJECTIVE',
+    'TECHNICAL SKILLS', 'SKILLS', 'CORE COMPETENCIES', 'CORE TECHNICAL CAPABILITIES',
+    'PROFESSIONAL EXPERIENCE', 'WORK EXPERIENCE', 'EXPERIENCE',
+    'EDUCATION',
+    'NOTABLE PROJECTS', 'KEY PROJECTS', 'PROJECTS',
+    'KEY ACHIEVEMENTS', 'ACHIEVEMENTS',
+    'CERTIFICATIONS', 'CERTIFICATIONS & TRAINING',
+    'ADDITIONAL INFORMATION', 'PERSONAL INTERESTS'
+]
+
+# Spanish headers for Spanish-language resumes. Each maps to a canonical section above,
+# and the original header text is kept so it renders in Spanish.
+SECTION_ALIASES = {
+    'PERFIL PROFESIONAL': 'SUMMARY',
+    'RESUMEN': 'SUMMARY',
+    'COMPETENCIAS TÉCNICAS': 'TECHNICAL SKILLS',
+    'HABILIDADES TÉCNICAS': 'TECHNICAL SKILLS',
+    'EXPERIENCIA PROFESIONAL': 'PROFESSIONAL EXPERIENCE',
+    'FORMACIÓN': 'EDUCATION',
+    'FORMACIÓN ACADÉMICA': 'EDUCATION',
+    'PROYECTOS DESTACADOS': 'KEY PROJECTS',
+    'LOGROS DESTACADOS': 'KEY ACHIEVEMENTS',
+    'IDIOMAS': 'ADDITIONAL INFORMATION',
+}
+
+# Month abbreviations accepted in job date ranges (English, then Spanish)
+_MONTHS = r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec|Ene|Abr|Ago|Dic)'
+_DATE_RANGE = re.compile(
+    rf'\b({_MONTHS}\s+\d{{4}}\s*[-–]\s*(?:Present|Actualidad|\d{{4}}|{_MONTHS}\s+\d{{4}}))\b'
+)
+
+
+def _esc(text):
+    """Escape ampersands for ReportLab XML markup."""
+    return text.replace('&', '&amp;')
+
+
+def parse_resume_txt(file_path, verbose=False):
     """Parse a resume text file and extract sections."""
     with open(file_path, 'r', encoding='utf-8') as f:
         content = f.read()
-    
+
     sections = {}
+    titles = {}  # section key -> display title, only for aliased (non-English) headers
     current_section = None
     current_content = []
-    
+    warnings = []
+
     lines = content.split('\n')
     
     # Extract header info (name, title, contact) - look for contact info patterns
@@ -30,7 +74,8 @@ def parse_resume_txt(file_path):
         line = lines[i].strip()
         
         # Check if we've hit a major section header
-        if line and any(line.upper() == pattern for pattern in ['PROFESSIONAL SUMMARY', 'SUMMARY', 'OBJECTIVE', 'TECHNICAL SKILLS', 'SKILLS']):
+        if line and (any(line.upper() == pattern for pattern in ['PROFESSIONAL SUMMARY', 'SUMMARY', 'OBJECTIVE', 'TECHNICAL SKILLS', 'SKILLS'])
+                     or SECTION_ALIASES.get(line.upper()) in ('SUMMARY', 'TECHNICAL SKILLS')):
             header_complete = True
             break
         
@@ -45,17 +90,8 @@ def parse_resume_txt(file_path):
     
     sections['header'] = header_lines
     
-    # Common section headers to look for
-    section_patterns = [
-        'SUMMARY', 'PROFESSIONAL SUMMARY', 'OBJECTIVE',
-        'TECHNICAL SKILLS', 'SKILLS', 'CORE COMPETENCIES', 'CORE TECHNICAL CAPABILITIES',
-        'PROFESSIONAL EXPERIENCE', 'WORK EXPERIENCE', 'EXPERIENCE',
-        'EDUCATION',
-        'NOTABLE PROJECTS', 'KEY PROJECTS', 'PROJECTS',
-        'KEY ACHIEVEMENTS', 'ACHIEVEMENTS',
-        'CERTIFICATIONS', 'CERTIFICATIONS & TRAINING',
-        'ADDITIONAL INFORMATION', 'PERSONAL INTERESTS'
-    ]
+    section_patterns = SECTION_PATTERNS
+    header_name = header_lines[0].strip().upper() if header_lines else ''
     
     # Process the rest of the file from where header ended
     for line_idx in range(i, len(lines)):
@@ -63,71 +99,113 @@ def parse_resume_txt(file_path):
         
         # Check if this line is a section header
         is_section = False
+        alias = SECTION_ALIASES.get(line.upper().strip())
         for pattern in section_patterns:
-            if line.upper().strip() == pattern or line.upper().strip().endswith(pattern):
+            if line.upper().strip() == pattern or alias == pattern:
                 # Save previous section
                 if current_section:
                     sections[current_section] = '\n'.join(current_content).strip()
                 # Start new section
                 current_section = pattern.replace(' ', '_').upper()
                 current_content = []
+                if alias:
+                    titles[current_section] = line.strip().upper()
                 is_section = True
                 break
         
         if not is_section:
+            # Detect potential unrecognized section headers:
+            # ALL CAPS, 2+ words, not a bullet, not blank, not a known skill/contact line
+            stripped = line.strip()
+            if (stripped and stripped == stripped.upper() and len(stripped) >= 4
+                    and not stripped.startswith(('•', '-', '('))
+                    and ':' not in stripped and '|' not in stripped
+                    and not re.search(r'\d{4}', stripped)
+                    and len(stripped.split()) >= 2
+                    and stripped != header_name):
+                warnings.append(f"  [WARN] Possible unrecognized section header: \"{stripped}\" (line {line_idx + 1})")
+
             if current_section or line.strip():  # Add to current section or capture orphaned content
                 current_content.append(line)
-    
+
     # Save the last section
     if current_section:
         sections[current_section] = '\n'.join(current_content).strip()
-    
+    sections['_titles'] = titles
+
+    # Print warnings
+    if warnings:
+        basename = os.path.basename(file_path)
+        print(f"\n  Warnings for {basename}:")
+        for w in warnings:
+            print(w)
+
+    if verbose:
+        basename = os.path.basename(file_path)
+        print(f"\n  Parsed sections in {basename}:")
+        for key, val in sections.items():
+            if key == '_titles':
+                continue
+            if key == 'header':
+                print(f"    HEADER: {len(val)} lines")
+            else:
+                line_count = len([l for l in val.split('\n') if l.strip()])
+                print(f"    {key}: {line_count} content lines")
+
     return sections
 
-def create_resume_pdf(txt_file_path, output_pdf_path=None):
-    """Create a PDF from a resume text file."""
-    
-    if not os.path.exists(txt_file_path):
-        print(f"Error: File {txt_file_path} not found!")
-        return
-    
+# Arial ships with Windows; elsewhere register_fonts() fails and the PDF falls back to Helvetica
+FONT_DIR = os.path.join(os.environ.get('WINDIR', 'C:/Windows'), 'Fonts')
+
+def register_fonts():
+    """Register embedded TTF fonts for a properly sized PDF output."""
+    try:
+        pdfmetrics.registerFont(TTFont('Arial', f'{FONT_DIR}/arial.ttf'))
+        pdfmetrics.registerFont(TTFont('Arial-Bold', f'{FONT_DIR}/arialbd.ttf'))
+        pdfmetrics.registerFont(TTFont('Arial-Italic', f'{FONT_DIR}/ariali.ttf'))
+        pdfmetrics.registerFont(TTFont('Arial-BoldItalic', f'{FONT_DIR}/arialbi.ttf'))
+        from reportlab.pdfbase.pdfmetrics import registerFontFamily
+        registerFontFamily('Arial', normal='Arial', bold='Arial-Bold',
+                           italic='Arial-Italic', boldItalic='Arial-BoldItalic')
+        return True
+    except Exception:
+        return False
+
+def build_resume_elements(txt_file_path, verbose=False):
+    """Parse a resume .txt and build the ReportLab flowables shared by the PDF and DOCX outputs."""
+    fonts_available = register_fonts()
+    base_font = 'Arial' if fonts_available else 'Helvetica'
+    base_font_bold = 'Arial-Bold' if fonts_available else 'Helvetica-Bold'
+
     # Parse the resume
-    sections = parse_resume_txt(txt_file_path)
-    
-    # Determine output filename
-    if output_pdf_path is None:
-        base_name = os.path.splitext(txt_file_path)[0]
-        output_pdf_path = base_name + ".pdf"
-    
-    # Create the PDF
-    doc = SimpleDocTemplate(output_pdf_path, pagesize=letter,
-                            rightMargin=0.5*inch, leftMargin=0.5*inch,
-                            topMargin=0.5*inch, bottomMargin=0.5*inch)
-    
+    sections = parse_resume_txt(txt_file_path, verbose=verbose)
+
     elements = []
     styles = getSampleStyleSheet()
-    
+
     # Define custom styles
     name_style = ParagraphStyle(
         'CustomName',
         parent=styles['Heading1'],
         fontSize=16,
+        fontName=base_font_bold,
         textColor=colors.HexColor('#1a1a1a'),
         spaceAfter=2,
         alignment=TA_CENTER,
         leading=18
     )
-    
+
     contact_style = ParagraphStyle(
         'ContactInfo',
         parent=styles['Normal'],
         fontSize=10,
+        fontName=base_font,
         textColor=colors.HexColor('#444444'),
         spaceAfter=2,
         alignment=TA_CENTER,
         leading=12
     )
-    
+
     section_style = ParagraphStyle(
         'SectionHeading',
         parent=styles['Heading2'],
@@ -136,22 +214,24 @@ def create_resume_pdf(txt_file_path, output_pdf_path=None):
         spaceAfter=6,
         spaceBefore=10,
         leading=13,
-        fontName='Helvetica-Bold'
+        fontName=base_font_bold
     )
-    
+
     normal_style = ParagraphStyle(
         'CustomNormal',
         parent=styles['Normal'],
         fontSize=10,
+        fontName=base_font,
         leading=12,
         spaceAfter=6,
         alignment=TA_JUSTIFY
     )
-    
+
     bullet_style = ParagraphStyle(
         'BulletStyle',
         parent=styles['Normal'],
         fontSize=10,
+        fontName=base_font,
         leading=12,
         leftIndent=15,
         spaceAfter=2,
@@ -166,13 +246,14 @@ def create_resume_pdf(txt_file_path, output_pdf_path=None):
         spaceAfter=3,
         spaceBefore=6,
         leading=12,
-        fontName='Helvetica-Bold'
+        fontName=base_font_bold
     )
     
     company_style = ParagraphStyle(
         'CompanyStyle',
         parent=styles['Normal'],
         fontSize=10,
+        fontName=base_font,
         textColor=colors.HexColor('#333333'),
         spaceAfter=2,
         leading=12
@@ -197,25 +278,18 @@ def create_resume_pdf(txt_file_path, output_pdf_path=None):
                 elements.append(Paragraph(line, contact_style))
         
         elements.append(Spacer(1, 12))
-    
+
     # Process sections in a logical order
-    section_order = [
-        'SUMMARY', 'PROFESSIONAL_SUMMARY',
-        'TECHNICAL_SKILLS', 'SKILLS', 'CORE_COMPETENCIES', 'CORE_TECHNICAL_CAPABILITIES',
-        'PROFESSIONAL_EXPERIENCE', 'WORK_EXPERIENCE', 'EXPERIENCE',
-        'NOTABLE_PROJECTS', 'KEY_PROJECTS', 'PROJECTS',
-        'EDUCATION',
-        'KEY_ACHIEVEMENTS', 'ACHIEVEMENTS',
-        'CERTIFICATIONS', 'CERTIFICATIONS_&_TRAINING',
-        'ADDITIONAL_INFORMATION', 'PERSONAL_INTERESTS'
-    ]
+    # Derive section_order from the canonical SECTION_PATTERNS list
+    # so the two can never drift out of sync
+    section_order = [p.replace(' ', '_').upper() for p in SECTION_PATTERNS]
     
     for section_key in section_order:
         if section_key in sections and sections[section_key]:
             content = sections[section_key]
             
             # Add section heading
-            section_title = section_key.replace('_', ' ')
+            section_title = sections['_titles'].get(section_key, section_key.replace('_', ' '))
             elements.append(Paragraph(f"<b>{section_title}</b>", section_style))
             
             # Process content based on section type
@@ -250,10 +324,42 @@ def create_resume_pdf(txt_file_path, output_pdf_path=None):
                         if para_text:
                             elements.append(Paragraph(para_text, normal_style))
     
+    return sections, elements
+
+
+def create_resume_pdf(txt_file_path, output_pdf_path=None, verbose=False):
+    """Create a PDF from a resume text file."""
+
+    if not os.path.exists(txt_file_path):
+        print(f"Error: File {txt_file_path} not found!")
+        return
+
+    sections, elements = build_resume_elements(txt_file_path, verbose=verbose)
+
+    # Determine output filename
+    if output_pdf_path is None:
+        base_name = os.path.splitext(txt_file_path)[0]
+        output_pdf_path = base_name + ".pdf"
+
+    # Create the PDF
+    doc = SimpleDocTemplate(output_pdf_path, pagesize=letter,
+                            rightMargin=0.5*inch, leftMargin=0.5*inch,
+                            topMargin=0.5*inch, bottomMargin=0.5*inch)
+
+    # Embed metadata in PDF Info dictionary
+    name = sections['header'][0].strip().title() if sections.get('header') else 'Resume'
+    doc.title = f"{name} - Resume"
+    doc.author = name
+    doc.subject = "Professional Resume"
+    doc.creator = "AI Resume Assistant (create_pdf.py)"
+    doc.keywords = "resume"
+
     # Build PDF
     try:
         doc.build(elements)
-        print(f"[SUCCESS] Resume PDF created: {output_pdf_path}")
+        print(f"[SUCCESS] Resume PDF created: {output_pdf_path} ({doc.page} page{'s' if doc.page != 1 else ''})")
+        if doc.page > MAX_PAGES:
+            print(f"  [WARN] {doc.page} pages - resumes should be {MAX_PAGES} pages or less (some ATS truncate after page {MAX_PAGES})")
         return output_pdf_path
     except Exception as e:
         print(f"[ERROR] Error creating PDF: {e}")
@@ -273,16 +379,25 @@ def process_experience_section(content, elements, job_style, company_style, bull
             if '|' in line:
                 parts = line.split('|')
                 if len(parts) >= 2:
-                    title_company = parts[0].strip()
-                    dates = parts[1].strip() if len(parts) > 1 else ''
-                    
-                    # Create job header with dates aligned right
-                    job_text = f"<b>{title_company}</b>"
-                    if dates:
-                        job_text += f"  <i>({dates})</i>"
+                    company = parts[0].strip().replace('&', '&amp;')
+                    rest = parts[1].strip()
+
+                    # Extract date range from the title+date string
+                    date_match = _DATE_RANGE.search(rest)
+                    if date_match:
+                        date_str = date_match.group(1).replace('&', '&amp;')
+                        title = rest[:date_match.start()].strip().replace('&', '&amp;')
+                        if title:
+                            job_text = f"<b>{company} | {title}</b>  <i>{date_str}</i>"
+                        else:
+                            job_text = f"<b>{company}</b>  <i>{date_str}</i>"
+                    else:
+                        rest_esc = rest.replace('&', '&amp;')
+                        job_text = f"<b>{company}</b>  <i>({rest_esc})</i>"
                     elements.append(Paragraph(job_text, job_style))
             else:
-                elements.append(Paragraph(f"<b>{line}</b>", job_style))
+                line_esc = line.replace('&', '&amp;')
+                elements.append(Paragraph(f"<b>{line_esc}</b>", job_style))
             
             i += 1
             
@@ -308,7 +423,8 @@ def process_experience_section(content, elements, job_style, company_style, bull
                     
                 # Check for sub-sections like "Key Unity Projects:"
                 if line.endswith(':') and not line.startswith('•'):
-                    elements.append(Paragraph(f"<b>{line}</b>", company_style))
+                    line_esc = line.replace('&', '&amp;')
+                    elements.append(Paragraph(f"<b>{line_esc}</b>", company_style))
                     i += 1
                     
                     # Process items under this sub-section
@@ -331,13 +447,13 @@ def process_experience_section(content, elements, job_style, company_style, bull
                             break
                         else:
                             # Part of sub-section
-                            elements.append(Paragraph('  - ' + sub_line, bullet_style))
+                            elements.append(Paragraph('  - ' + _esc(sub_line), bullet_style))
                         i += 1
                     continue
                     
                 # Regular bullet points
                 if line.startswith('•'):
-                    elements.append(Paragraph(line, bullet_style))
+                    elements.append(Paragraph(_esc(line), bullet_style))
                 elif line and line[0].isupper() and ':' not in line:
                     # Likely a new section or standalone line
                     if re.search(r'\d{4}', line):
@@ -360,6 +476,7 @@ def process_skills_section(content, elements, bullet_style, normal_style):
             continue
         
         # Check if it's a categorized skill (has a colon)
+        line = _esc(line)
         if ':' in line and not line.startswith('•'):
             # Bold the category
             parts = line.split(':', 1)
@@ -394,7 +511,7 @@ def process_projects_section(content, elements, project_style, bullet_style):
         if not line.startswith('•') and (re.search(r'\(\d{4}\)', line) or 
                                          (line[0].isupper() and not line.startswith('-'))):
             # This is a project title
-            elements.append(Paragraph(f"<b>{line}</b>", project_style))
+            elements.append(Paragraph(f"<b>{_esc(line)}</b>", project_style))
             i += 1
             
             # Collect project description bullets
@@ -412,10 +529,10 @@ def process_projects_section(content, elements, project_style, bullet_style):
                     break
                     
                 if desc_line.startswith('•'):
-                    elements.append(Paragraph(desc_line, bullet_style))
+                    elements.append(Paragraph(_esc(desc_line), bullet_style))
                 else:
                     # Add as bullet if not already
-                    elements.append(Paragraph('• ' + desc_line, bullet_style))
+                    elements.append(Paragraph('• ' + _esc(desc_line), bullet_style))
                 i += 1
         elif line.startswith('•'):
             elements.append(Paragraph(line, bullet_style))
@@ -435,10 +552,11 @@ def process_education_section(content, elements, normal_style, bullet_style):
             continue
         
         # Education entries usually have degree type or school name
-        if 'Master' in line or 'Bachelor' in line or 'University' in line or 'School' in line:
+        if any(k in line for k in ('Master', 'Bachelor', 'University', 'School', 'Máster', 'Grado')):
             # Bold degree names
             line = re.sub(r'(Master[^,\-|]*)', r'<b>\1</b>', line)
             line = re.sub(r'(Bachelor[^,\-|]*)', r'<b>\1</b>', line)
+            line = re.sub(r'((?:Máster|Grado) en [^,\-|]*)', r'<b>\1</b>', line)
             elements.append(Paragraph(line, normal_style))
         elif line.startswith('•'):
             elements.append(Paragraph(line, bullet_style))
@@ -450,27 +568,126 @@ def process_bullet_section(content, elements, bullet_style):
     lines = content.split('\n')
     
     for line in lines:
-        line = line.strip()
+        line = _esc(line.strip())
         if not line:
             continue
-        
+
         if not line.startswith('•'):
             line = '• ' + line
-        
+
         # Bold important keywords
         line = re.sub(r'(Patent:)', r'<b>\1</b>', line)
         line = re.sub(r'(Award:)', r'<b>\1</b>', line)
         line = re.sub(r'(Published:)', r'<b>\1</b>', line)
-        
+
         elements.append(Paragraph(line, bullet_style))
+
+# Inline markup the section processors emit: <b>, <i>, <link href="...">
+_MARKUP_TOKEN = re.compile(r'<(/?)(b|i|link)(?:\s+href="[^"]*")?>')
+
+
+def _add_markup_runs(paragraph, markup, font_size, color, bold_default):
+    """Turn ReportLab inline markup into python-docx runs."""
+    from html import unescape
+    from docx.shared import Pt, RGBColor
+
+    def add_run(text, bold, italic):
+        text = unescape(text)
+        if not text:
+            return
+        run = paragraph.add_run(text)
+        run.bold = bold
+        run.italic = italic
+        run.font.name = 'Arial'
+        run.font.size = Pt(font_size)
+        run.font.color.rgb = RGBColor.from_string(color)
+
+    bold, italic, pos = bold_default, False, 0
+    for m in _MARKUP_TOKEN.finditer(markup):
+        add_run(markup[pos:m.start()], bold, italic)
+        closing, tag = m.group(1) == '/', m.group(2)
+        if tag == 'b':
+            bold = bold_default or not closing
+        elif tag == 'i':
+            italic = not closing
+        pos = m.end()
+    add_run(markup[pos:], bold, italic)
+
+
+def create_resume_docx(txt_file_path, output_docx_path=None, verbose=False):
+    """Create a Word .docx from a resume text file, for ATS forms that require Word.
+
+    Reuses build_resume_elements so the .docx has the same content and structure as the PDF.
+    """
+    from docx import Document
+    from docx.shared import Pt, Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+    if not os.path.exists(txt_file_path):
+        print(f"Error: File {txt_file_path} not found!")
+        return
+
+    sections, elements = build_resume_elements(txt_file_path, verbose=verbose)
+
+    if output_docx_path is None:
+        output_docx_path = os.path.splitext(txt_file_path)[0] + ".docx"
+
+    document = Document()
+    page = document.sections[0]
+    page.page_width, page.page_height = Inches(8.5), Inches(11)
+    page.left_margin = page.right_margin = Inches(0.5)
+    page.top_margin = page.bottom_margin = Inches(0.5)
+
+    name = sections['header'][0].strip().title() if sections.get('header') else 'Resume'
+    document.core_properties.title = f"{name} - Resume"
+    document.core_properties.author = name
+    document.styles['Normal'].font.name = 'Arial'
+    document.styles['Normal'].font.size = Pt(10)
+
+    alignments = {TA_LEFT: WD_ALIGN_PARAGRAPH.LEFT, TA_CENTER: WD_ALIGN_PARAGRAPH.CENTER,
+                  TA_JUSTIFY: WD_ALIGN_PARAGRAPH.JUSTIFY}
+    last = None
+    for el in elements:
+        if isinstance(el, Spacer):
+            if last is not None:
+                last.paragraph_format.space_after = Pt(el.height)
+            continue
+        if not isinstance(el, Paragraph):
+            continue
+        style = el.style
+        p = document.add_paragraph()
+        fmt = p.paragraph_format
+        fmt.space_before = Pt(style.spaceBefore)
+        fmt.space_after = Pt(style.spaceAfter)
+        fmt.left_indent = Pt(style.leftIndent)
+        fmt.line_spacing = Pt(style.leading)
+        fmt.alignment = alignments.get(style.alignment, WD_ALIGN_PARAGRAPH.LEFT)
+        color = style.textColor.hexval()[2:] if style.textColor else '000000'
+        _add_markup_runs(p, el.text, style.fontSize, color, 'Bold' in style.fontName)
+        last = p
+
+    try:
+        document.save(output_docx_path)
+        print(f"[SUCCESS] Resume DOCX created: {output_docx_path}")
+        return output_docx_path
+    except Exception as e:
+        print(f"[ERROR] Error creating DOCX: {e}")
+        return None
+
 
 def main():
     """Main function to handle command line arguments."""
-    if len(sys.argv) > 1:
+    args = [a for a in sys.argv[1:] if not a.startswith('--')]
+    verbose = '--verbose' in sys.argv or '-v' in sys.argv
+    want_docx = '--docx' in sys.argv
+
+    if args:
         # Process specific file
-        txt_file = sys.argv[1]
-        output_pdf = sys.argv[2] if len(sys.argv) > 2 else None
-        create_resume_pdf(txt_file, output_pdf)
+        txt_file = args[0]
+        output_pdf = args[1] if len(args) > 1 else None
+        create_resume_pdf(txt_file, output_pdf, verbose=verbose)
+        if want_docx:
+            create_resume_docx(txt_file, os.path.splitext(output_pdf or txt_file)[0] + ".docx", verbose=verbose)
     else:
         # Process all .txt resume files in the current directory
         # Look for files containing "Resume" in the name
@@ -479,12 +696,14 @@ def main():
 
         if not resume_files:
             print("No resume .txt files found in current directory.")
-            print("Usage: python create_pdf.py [resume_file.txt] [output.pdf]")
+            print("Usage: python create_pdf.py [resume_file.txt] [output.pdf] [--docx] [--verbose]")
             return
 
         for txt_file in resume_files:
             print(f"\nProcessing {txt_file}...")
-            create_resume_pdf(txt_file)
+            create_resume_pdf(txt_file, verbose=verbose)
+            if want_docx:
+                create_resume_docx(txt_file, verbose=verbose)
 
 if __name__ == "__main__":
     main()

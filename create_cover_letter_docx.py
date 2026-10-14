@@ -4,6 +4,15 @@ from docx.shared import Pt, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 import sys
 
+GREETINGS = ('Dear', 'Hi ', 'Hi,', 'Hello')
+
+
+def is_body_paragraph(text):
+    """A body paragraph is prose: not a greeting, and longer than a closing or signature block."""
+    text = text.strip()
+    return not text.startswith(GREETINGS) and len(text) > 120
+
+
 def create_cover_letter_docx(txt_file_path):
     """Convert a text cover letter to DOCX format with proper formatting."""
 
@@ -36,13 +45,13 @@ def create_cover_letter_docx(txt_file_path):
             font.name = 'Arial'
             font.size = Pt(11)
 
-            # Justify all paragraphs except the greeting and closing
-            if not para_text.startswith('Dear') and not para_text.startswith('Best regards') and not para_text.startswith('Clint Campbell'):
+            # Justify body paragraphs; greeting, closing and signature lines stay left-aligned
+            if is_body_paragraph(para_text):
                 paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
 
             # Add spacing after paragraph (except for the last one)
             if i < len(paragraphs) - 1:
-                paragraph.space_after = Pt(6)
+                paragraph.paragraph_format.space_after = Pt(6)
 
     # Save the document
     output_path = txt_file_path.replace('.txt', '.docx')
@@ -51,10 +60,10 @@ def create_cover_letter_docx(txt_file_path):
     return output_path
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        txt_path = sys.argv[1]
-    else:
-        txt_path = "JobSearches\\CrazyLabs\\CoverLetter_CrazyLabs.txt"
+    if len(sys.argv) < 2:
+        print("Usage: python create_cover_letter_docx.py <cover_letter.txt>")
+        sys.exit(1)
+    txt_path = sys.argv[1]
 
     if os.path.exists(txt_path):
         create_cover_letter_docx(txt_path)

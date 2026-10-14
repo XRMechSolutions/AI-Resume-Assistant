@@ -2,10 +2,9 @@
 
 ## BEFORE STARTING ANY RESUME
 
-```bash
-# MANDATORY - Read your source of truth first:
-Read "[Your_Name]_Source_of_Truth.md"
-```
+MANDATORY - read these first:
+- `Source_of_Truth.md` - the only authority for claims
+- `Unconfirmed_Facts.md` - facts not yet confirmed or approved. **Never use anything in its Open table**
 
 ## VERIFICATION FOR EACH SKILL/CLAIM
 
@@ -81,3 +80,23 @@ These phrases often lead to fabrication:
 2. **Highlight transferable skills** - Similar technologies you DO know
 3. **Be honest in cover letter** - "While I haven't used X, I have extensive experience with similar Y"
 4. **Ask the user** - Let them decide if it's worth applying
+
+## SOURCE DOCUMENT SECTIONS (search by heading - line numbers drift)
+- `## Current Role` / `## Previous Experience` - roles, projects, dates
+- `## Technical Skills - VERIFIED` - what can go in TECHNICAL SKILLS
+- `## DO NOT CLAIM - Absolute Prohibitions`
+
+## KNOWN CORRECTIONS
+
+Specific errors that have appeared in past generated resumes. Add one every time you catch a
+fabrication or a wrong framing, so it is never repeated.
+
+### Project-Specific Corrections
+- [e.g. "Project A" and "Project B" are THE SAME PROJECT - don't list separately]
+- [e.g. The X frontend was Kotlin, NOT Vue.js]
+
+### Positioning Corrections
+- [e.g. Never say "10+ years of full stack" - incorrect framing]
+
+### Items Fabricated in Past Resumes - Never Include
+- [Exact phrase that was invented]
